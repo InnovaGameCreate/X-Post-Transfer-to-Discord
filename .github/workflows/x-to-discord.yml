@@ -1,0 +1,58 @@
+name: X → Discord
+
+# リポジトリへのコミット権限
+permissions:
+  contents: write
+
+on:
+  schedule:
+    # 03:30 UTC = 12:30 JST
+    # 12:30 UTC = 21:30 JST
+    - cron: '30 3,12 * * *'
+
+jobs:
+  post-new-tweets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Fetch last tweet ID
+        id: last
+        run: |
+          if [ -f .github/last_tweet_id.txt ]; then
+            echo "LAST_ID=$(cat .github/last_tweet_id.txt)" >> $GITHUB_ENV
+          else
+            echo "LAST_ID=" >> $GITHUB_ENV
+          fi
+
+      - name: Fetch new tweets and send to Discord
+        id: fetch
+        env:
+          BEARER_TOKEN:        ${{ secrets.TW_BEARER_TOKEN }}
+          USER_ID:             ${{ secrets.TWITTER_USER_ID }}
+          USERNAME:            ${{ secrets.TWITTER_USERNAME }}
+          SINCE_ID:            ${{ env.LAST_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python .github/scripts/fetch_and_post.py
+
+      - name: Commit updated last_tweet_id
+        if: ${{ steps.fetch.outputs.NEW_LAST_ID != '' }}
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: Update last tweet ID
+          file_pattern: .github/last_tweet_id.txt
+          branch: main
+          token: ${{ secrets.GITHUB_TOKEN }}
